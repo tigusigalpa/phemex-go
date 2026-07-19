@@ -12,6 +12,11 @@ Trade spot, perpetuals, and margin, stream live market data, and manage your wal
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/tigusigalpa/phemex-go/pulls)
 
+## Related Projects and Documentation
+
+- **[phemex-go Wiki](https://github.com/tigusigalpa/phemex-go/wiki)** - Complete guides, API notes, and practical usage examples.
+- **[phemex-php](https://github.com/tigusigalpa/phemex-php)** - The companion Phemex SDK for PHP and Laravel projects.
+
 ---
 
 ## Why phemex-go?
@@ -381,6 +386,8 @@ Contributions are genuinely welcome — bug reports, docs fixes, new endpoints, 
 
 - [Phemex API Docs](https://phemex-docs.github.io) — the authoritative source for endpoints and parameters
 - [Package reference on pkg.go.dev](https://pkg.go.dev/github.com/tigusigalpa/phemex-go)
+- [phemex-go Wiki](https://github.com/tigusigalpa/phemex-go/wiki) - guides, API notes, and practical examples
+- [phemex-php](https://github.com/tigusigalpa/phemex-php) - the companion SDK for PHP and Laravel projects
 
 ## Disclaimer
 
