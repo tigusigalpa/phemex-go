@@ -1,8 +1,8 @@
-<div align="center">
+# Phemex crypto-exchange Golang SDK
 
-# phemex-go
+![Phemex Golang SDK](https://i.postimg.cc/Dy6hdCt3/phemex-golang-banner.jpg)
 
-**A friendly, batteries-included Go SDK for the [Phemex](https://phemex.com/) crypto exchange.**
+**A friendly, batteries-included Golang SDK for the [Phemex](https://phemex.com/) crypto exchange.**
 
 Trade spot, perpetuals, and margin, stream live market data, and manage your wallets — all with clean, idiomatic Go.
 
@@ -12,22 +12,26 @@ Trade spot, perpetuals, and margin, stream live market data, and manage your wal
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/tigusigalpa/phemex-go/pulls)
 
-</div>
-
 ---
 
 ## Why phemex-go?
 
-Talking to a crypto exchange should feel boring — in the best possible way. No surprises, no leaked goroutines, no mystery around request signing. That's exactly what this library is built for.
+Talking to a crypto exchange should feel boring — in the best possible way. No surprises, no leaked goroutines, no
+mystery around request signing. That's exactly what this library is built for.
 
 Under the hood, `phemex-go` takes care of the tedious, error-prone parts so you can focus on your strategy:
 
-- **Contexts everywhere.** Every REST and WebSocket call takes a `context.Context`, so cancellation, deadlines, and graceful shutdown just work.
-- **Signing that stays out of your way.** Private requests are signed with HMAC SHA256 automatically — you never touch a timestamp or a header.
-- **A WebSocket client that survives the real world.** Networks drop. Servers hiccup. The client reconnects on its own, keeps the connection alive with heartbeats, and hands you events over plain Go channels.
-- **Typed by domain.** Market data, spot, USDⓈ-M, Coin-M, margin, and assets each live in their own small, focused package.
+- **Contexts everywhere.** Every REST and WebSocket call takes a `context.Context`, so cancellation, deadlines, and
+  graceful shutdown just work.
+- **Signing that stays out of your way.** Private requests are signed with HMAC SHA256 automatically — you never touch a
+  timestamp or a header.
+- **A WebSocket client that survives the real world.** Networks drop. Servers hiccup. The client reconnects on its own,
+  keeps the connection alive with heartbeats, and hands you events over plain Go channels.
+- **Typed by domain.** Market data, spot, USDⓈ-M, Coin-M, margin, and assets each live in their own small, focused
+  package.
 - **Featherweight.** The only third-party dependency is `gorilla/websocket`. Everything else is the standard library.
-- **Actually tested.** Signature generation and the REST layer are covered by unit tests and `httptest` mocks, so you can trust it without hitting live endpoints.
+- **Actually tested.** Signature generation and the REST layer are covered by unit tests and `httptest` mocks, so you
+  can trust it without hitting live endpoints.
 
 ## Requirements
 
@@ -90,7 +94,8 @@ func main() {
 A little mental model goes a long way. There are two layers you'll interact with:
 
 1. **The core client** (`phemex.NewClient`) — owns the HTTP transport, credentials, signing, retries, and error mapping.
-2. **Domain clients** (`market.NewClient`, `spot.NewClient`, …) — thin, typed wrappers around the core client, one per API area.
+2. **Domain clients** (`market.NewClient`, `spot.NewClient`, …) — thin, typed wrappers around the core client, one per
+   API area.
 
 You create the core client once and share it across as many domain clients as you like — it's safe for concurrent use.
 
@@ -109,16 +114,16 @@ assetsClient := assets.NewClient(core)
 
 `phemex.Config` is a plain struct — set only what you need and rely on sensible defaults for the rest.
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `APIKey` | `string` | `""` | Your Phemex API key. Optional for public endpoints. |
-| `APISecret` | `string` | `""` | Your Phemex API secret. Required to sign private requests. |
-| `BaseURI` | `string` | `https://api.phemex.com` | REST base URL. Point this at the testnet when experimenting. |
-| `HTTPClient` | `*http.Client` | internal client | Bring your own client to control proxies, TLS, or transport pooling. |
-| `Timeout` | `time.Duration` | `30s` | Per-request timeout (used only when you don't supply your own `HTTPClient`). |
-| `Retries` | `int` | `3` | How many times to retry on rate limits and 5xx responses. |
-| `RetryDelay` | `time.Duration` | `1s` | Base delay for exponential backoff between retries. |
-| `RequestTracing` | `string` | `""` | Optional trace token attached to signed requests for debugging. |
+| Field            | Type            | Default                  | Description                                                                  |
+|------------------|-----------------|--------------------------|------------------------------------------------------------------------------|
+| `APIKey`         | `string`        | `""`                     | Your Phemex API key. Optional for public endpoints.                          |
+| `APISecret`      | `string`        | `""`                     | Your Phemex API secret. Required to sign private requests.                   |
+| `BaseURI`        | `string`        | `https://api.phemex.com` | REST base URL. Point this at the testnet when experimenting.                 |
+| `HTTPClient`     | `*http.Client`  | internal client          | Bring your own client to control proxies, TLS, or transport pooling.         |
+| `Timeout`        | `time.Duration` | `30s`                    | Per-request timeout (used only when you don't supply your own `HTTPClient`). |
+| `Retries`        | `int`           | `3`                      | How many times to retry on rate limits and 5xx responses.                    |
+| `RetryDelay`     | `time.Duration` | `1s`                     | Base delay for exponential backoff between retries.                          |
+| `RequestTracing` | `string`        | `""`                     | Optional trace token attached to signed requests for debugging.              |
 
 ```go
 client := phemex.NewClient(phemex.Config{
@@ -133,7 +138,8 @@ client := phemex.NewClient(phemex.Config{
 
 ## Authentication
 
-For anything that touches your account — placing orders, reading balances, transferring funds — provide an API key and secret. Signing happens automatically on every private call, so you never build a signature by hand.
+For anything that touches your account — placing orders, reading balances, transferring funds — provide an API key and
+secret. Signing happens automatically on every private call, so you never build a signature by hand.
 
 ```go
 client := phemex.NewClient(phemex.Config{
@@ -143,7 +149,8 @@ client := phemex.NewClient(phemex.Config{
 })
 ```
 
-> **Keep secrets out of source code.** Prefer environment variables or a secrets manager. Never commit real keys to version control.
+> **Keep secrets out of source code.** Prefer environment variables or a secrets manager. Never commit real keys to
+> version control.
 
 Behind the scenes, each private request gets three headers:
 
@@ -153,20 +160,22 @@ Behind the scenes, each private request gets three headers:
 
 ## REST API
 
-The library mirrors Phemex's structure with one small package per domain. Each exposes typed helpers that return a `*phemex.Response`.
+The library mirrors Phemex's structure with one small package per domain. Each exposes typed helpers that return a
+`*phemex.Response`.
 
-| Package | What it covers |
-|---------|----------------|
+| Package            | What it covers                                                                                                            |
+|--------------------|---------------------------------------------------------------------------------------------------------------------------|
 | [`market`](market) | Public market data: products, server time, order book, full book, klines, recent trades, 24h ticker, funding-rate history |
-| [`spot`](spot) | Spot trading: place, amend, cancel, and query orders; wallets; order history |
-| [`usdtm`](usdtm) | USDⓈ-M perpetuals: orders, account positions, leverage, position mode, balance assignment |
-| [`coinm`](coinm) | Coin-M perpetuals: orders, trading account & positions, leverage, balance assignment |
-| [`margin`](margin) | Margin trading: orders plus borrow and payback history |
-| [`assets`](assets) | Wallets & transfers: spot↔futures transfers, universal transfers, deposit addresses, deposit/withdraw history |
+| [`spot`](spot)     | Spot trading: place, amend, cancel, and query orders; wallets; order history                                              |
+| [`usdtm`](usdtm)   | USDⓈ-M perpetuals: orders, account positions, leverage, position mode, balance assignment                                 |
+| [`coinm`](coinm)   | Coin-M perpetuals: orders, trading account & positions, leverage, balance assignment                                      |
+| [`margin`](margin) | Margin trading: orders plus borrow and payback history                                                                    |
+| [`assets`](assets) | Wallets & transfers: spot↔futures transfers, universal transfers, deposit addresses, deposit/withdraw history             |
 
 ### Working with responses
 
-Every call returns a `*phemex.Response` that wraps the raw JSON envelope. You can check success and unmarshal the payload into your own structs:
+Every call returns a `*phemex.Response` that wraps the raw JSON envelope. You can check success and unmarshal the
+payload into your own structs:
 
 ```go
 resp, err := marketClient.Time(ctx)
@@ -186,7 +195,8 @@ if err := resp.Data(&t); err != nil {
 fmt.Println("Server time:", t.Timestamp)
 ```
 
-For public market-data endpoints under `/md`, use `Result(...)`, `ErrorMsg()`, and `ID()` instead of `Data(...)`, `Msg()`, and `Code()` — the envelope shape differs slightly, and the response helpers cover both.
+For public market-data endpoints under `/md`, use `Result(...)`, `ErrorMsg()`, and `ID()` instead of `Data(...)`,
+`Msg()`, and `Code()` — the envelope shape differs slightly, and the response helpers cover both.
 
 ### Market data example
 
@@ -243,7 +253,9 @@ fmt.Println("Open orders:", open)
 
 ## WebSocket API
 
-The `ws` package gives you a resilient, real-time feed. It reconnects automatically after drops, sends periodic heartbeats to keep the socket healthy, replays your subscriptions on reconnect, and delivers every message over a Go channel.
+The `ws` package gives you a resilient, real-time feed. It reconnects automatically after drops, sends periodic
+heartbeats to keep the socket healthy, replays your subscriptions on reconnect, and delivers every message over a Go
+channel.
 
 ```go
 import (
@@ -282,14 +294,15 @@ for ev := range client.Events() {
 
 ### Supported channels
 
-| Channel | Description |
-|---------|-------------|
-| `orderbook` | Level 2 order book updates |
-| `trade` | Real-time public trades |
-| `kline` | Streaming candlesticks |
-| `aop` | Account / Order / Position updates (requires authentication) |
+| Channel     | Description                                                  |
+|-------------|--------------------------------------------------------------|
+| `orderbook` | Level 2 order book updates                                   |
+| `trade`     | Real-time public trades                                      |
+| `kline`     | Streaming candlesticks                                       |
+| `aop`       | Account / Order / Position updates (requires authentication) |
 
-When you provide credentials, the client authenticates with a `user.auth` message before your subscriptions go out, so private channels like `aop` are ready to use.
+When you provide credentials, the client authenticates with a `user.auth` message before your subscriptions go out, so
+private channels like `aop` are ready to use.
 
 ## Error Handling
 
@@ -315,7 +328,8 @@ if err != nil {
 }
 ```
 
-Rate limits (`429`) and server errors (`5xx`) are retried automatically with exponential backoff, honoring the `Retry-After` header when present. Only after retries are exhausted does the error reach you.
+Rate limits (`429`) and server errors (`5xx`) are retried automatically with exponential backoff, honoring the
+`Retry-After` header when present. Only after retries are exhausted does the error reach you.
 
 ## Examples
 
@@ -370,7 +384,9 @@ Contributions are genuinely welcome — bug reports, docs fixes, new endpoints, 
 
 ## Disclaimer
 
-Trading cryptocurrencies carries significant risk. This library is provided as-is, without any warranty. You are solely responsible for your API keys, your orders, and your funds. Test thoroughly — ideally against the Phemex testnet — before running anything with real money.
+Trading cryptocurrencies carries significant risk. This library is provided as-is, without any warranty. You are solely
+responsible for your API keys, your orders, and your funds. Test thoroughly — ideally against the Phemex testnet —
+before running anything with real money.
 
 ## Author
 
@@ -381,4 +397,5 @@ Trading cryptocurrencies carries significant risk. This library is provided as-i
 
 ## License
 
-Released under the MIT License — see [LICENSE](LICENSE) for the full text. Use it freely, build something great, and a star on GitHub is always appreciated.
+Released under the MIT License — see [LICENSE](LICENSE) for the full text. Use it freely, build something great, and a
+star on GitHub is always appreciated.
