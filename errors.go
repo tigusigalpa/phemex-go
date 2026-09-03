@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 )
 
@@ -17,6 +16,12 @@ type APIError struct {
 }
 
 func (e *APIError) Error() string {
+	if e.Code != 0 && e.Message != "" {
+		return fmt.Sprintf("phemex API error %d (code %d): %s", e.StatusCode, e.Code, e.Message)
+	}
+	if e.Code != 0 {
+		return fmt.Sprintf("phemex API error %d (code %d)", e.StatusCode, e.Code)
+	}
 	if e.Message != "" {
 		return fmt.Sprintf("phemex API error %d: %s", e.StatusCode, e.Message)
 	}
@@ -95,11 +100,11 @@ func newAPIError(status int, message string) *APIError {
 }
 
 func newHTTPError(status int, body []byte) *APIError {
-	return &APIError{StatusCode: status, Message: extractMessage(body), Body: body}
+	return newAPIErrorFromBody(status, 0, body)
 }
 
 func classifyHTTPError(status int, body []byte) error {
-	e := &APIError{StatusCode: status, Message: extractMessage(body), Body: body}
+	e := newAPIErrorFromBody(status, 0, body)
 	switch status {
 	case http.StatusUnauthorized:
 		return &AuthenticationError{*e}
@@ -113,12 +118,17 @@ func classifyHTTPError(status int, body []byte) error {
 }
 
 func newRateLimitError(status int, body []byte, retryAfter string) *RateLimitError {
-	e := &APIError{StatusCode: status, Message: extractMessage(body), Body: body}
-	var d time.Duration
-	if retryAfter != "" {
-		if i, err := strconv.Atoi(retryAfter); err == nil && i > 0 {
-			d = time.Duration(i) * time.Second
-		}
+	e := newAPIErrorFromBody(status, 0, body)
+	return &RateLimitError{APIError: *e, RetryAfter: parseRetryAfter(retryAfter)}
+}
+
+func newAPIErrorFromBody(status, fallbackCode int, body []byte) *APIError {
+	e := &APIError{StatusCode: status, Code: fallbackCode, Message: extractMessage(body), Body: body}
+	var envelope struct {
+		Code int `json:"code"`
 	}
-	return &RateLimitError{APIError: *e, RetryAfter: d}
+	if json.Unmarshal(body, &envelope) == nil {
+		e.Code = envelope.Code
+	}
+	return e
 }

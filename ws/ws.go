@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,14 +57,21 @@ type Event struct {
 type Client struct {
 	config Config
 
-	conn   *websocket.Conn
-	connMu sync.RWMutex
-	events chan Event
-	done   chan struct{}
-	wg     sync.WaitGroup
+	conn    *websocket.Conn
+	connMu  sync.RWMutex
+	writeMu sync.Mutex
+	events  chan Event
+	done    chan struct{}
+	wg      sync.WaitGroup
 
 	subMu sync.Mutex
 	subs  []subscription
+
+	stateMu      sync.Mutex
+	started      bool
+	closed       bool
+	reconnecting bool
+	closeOnce    sync.Once
 }
 
 type subscription struct {
@@ -90,10 +97,31 @@ func (c *Client) Events() <-chan Event {
 // Connect establishes the WebSocket connection and starts background loops.
 // It attempts to reconnect automatically on unexpected disconnects.
 func (c *Client) Connect(ctx context.Context) error {
+	c.stateMu.Lock()
+	if c.closed {
+		c.stateMu.Unlock()
+		return errors.New("ws: client is closed")
+	}
+	if c.started {
+		c.stateMu.Unlock()
+		return errors.New("ws: client is already connected")
+	}
+	c.started = true
+	c.stateMu.Unlock()
+
 	if err := c.dial(ctx); err != nil {
+		c.stateMu.Lock()
+		c.started = false
+		c.stateMu.Unlock()
 		return err
 	}
+	c.stateMu.Lock()
+	if c.closed {
+		c.stateMu.Unlock()
+		return errors.New("ws: client is closed")
+	}
 	c.wg.Add(2)
+	c.stateMu.Unlock()
 	go c.readLoop()
 	go c.pingLoop()
 	return nil
@@ -101,15 +129,25 @@ func (c *Client) Connect(ctx context.Context) error {
 
 // Close terminates the connection and background goroutines.
 func (c *Client) Close() error {
-	close(c.done)
-	c.connMu.Lock()
-	if c.conn != nil {
-		_ = c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-		_ = c.conn.Close()
-	}
-	c.connMu.Unlock()
-	c.wg.Wait()
-	close(c.events)
+	c.closeOnce.Do(func() {
+		c.stateMu.Lock()
+		c.closed = true
+		close(c.done)
+		c.stateMu.Unlock()
+
+		c.connMu.Lock()
+		conn := c.conn
+		c.conn = nil
+		c.connMu.Unlock()
+		if conn != nil {
+			c.writeMu.Lock()
+			_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(defaultWriteTimeout))
+			c.writeMu.Unlock()
+			_ = conn.Close()
+		}
+		c.wg.Wait()
+		close(c.events)
+	})
 	return nil
 }
 
@@ -118,13 +156,18 @@ func (c *Client) Subscribe(ctx context.Context, channel string, symbols ...strin
 	if len(symbols) == 0 {
 		return errors.New("ws: at least one symbol is required")
 	}
-	req := subscription{
-		ID:     int(time.Now().UnixNano()),
-		Method: "subscribe",
-		Params: []string{channel, symbols[0]},
+	for _, symbol := range symbols {
+		req := subscription{
+			ID:     int(time.Now().UnixNano()),
+			Method: subscriptionMethod(channel, "subscribe"),
+			Params: []string{symbol},
+		}
+		if err := c.writeJSON(ctx, req); err != nil {
+			return err
+		}
+		c.trackSubscription(req)
 	}
-	c.trackSubscription(req)
-	return c.writeJSON(ctx, req)
+	return nil
 }
 
 // Unsubscribe removes a previously created subscription.
@@ -132,11 +175,18 @@ func (c *Client) Unsubscribe(ctx context.Context, channel string, symbols ...str
 	if len(symbols) == 0 {
 		return errors.New("ws: at least one symbol is required")
 	}
-	return c.writeJSON(ctx, subscription{
-		ID:     int(time.Now().UnixNano()),
-		Method: "unsubscribe",
-		Params: []string{channel, symbols[0]},
-	})
+	for _, symbol := range symbols {
+		req := subscription{
+			ID:     int(time.Now().UnixNano()),
+			Method: subscriptionMethod(channel, "unsubscribe"),
+			Params: []string{symbol},
+		}
+		if err := c.writeJSON(ctx, req); err != nil {
+			return err
+		}
+		c.untrackSubscription(subscriptionMethod(channel, "subscribe"), symbol)
+	}
+	return nil
 }
 
 func (c *Client) dial(ctx context.Context) error {
@@ -154,37 +204,52 @@ func (c *Client) dial(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("ws: dial %s: %w", c.config.baseURL(), err)
 	}
-	c.connMu.Lock()
-	c.conn = conn
-	c.connMu.Unlock()
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(defaultReadTimeout))
+	})
 
 	if c.config.APIKey != "" && c.config.APISecret != "" {
-		if err := c.authenticate(ctx); err != nil {
+		if err := c.authenticate(ctx, conn); err != nil {
 			_ = conn.Close()
 			return err
 		}
+	}
+
+	c.stateMu.Lock()
+	if c.closed {
+		c.stateMu.Unlock()
+		_ = conn.Close()
+		return errors.New("ws: client is closed")
+	}
+	c.connMu.Lock()
+	previous := c.conn
+	c.conn = conn
+	c.connMu.Unlock()
+	c.stateMu.Unlock()
+	if previous != nil && previous != conn {
+		_ = previous.Close()
 	}
 
 	c.resubscribe(ctx)
 	return nil
 }
 
-func (c *Client) authenticate(ctx context.Context) error {
-	timestamp := time.Now().UnixMilli()
-	message := fmt.Sprintf("%s%s%d", c.config.APIKey, c.config.APISecret, timestamp)
+func (c *Client) authenticate(ctx context.Context, conn *websocket.Conn) error {
+	expiry := time.Now().Unix() + 60
+	message := fmt.Sprintf("%s%d", c.config.APIKey, expiry)
 	mac := hmac.New(sha256.New, []byte(c.config.APISecret))
 	mac.Write([]byte(message))
 	signature := hex.EncodeToString(mac.Sum(nil))
 
-	return c.writeJSON(ctx, map[string]any{
+	return c.writeJSONTo(ctx, conn, map[string]any{
 		"method": "user.auth",
 		"params": []any{
 			"API",
 			c.config.APIKey,
-			strconv.FormatInt(timestamp, 10),
 			signature,
+			expiry,
 		},
-		"id": int(timestamp),
+		"id": int(time.Now().UnixNano()),
 	})
 }
 
@@ -194,29 +259,46 @@ func (c *Client) trackSubscription(req subscription) {
 	c.subs = append(c.subs, req)
 }
 
-func (c *Client) resubscribe(ctx context.Context) {
+func (c *Client) untrackSubscription(method, symbol string) {
 	c.subMu.Lock()
 	defer c.subMu.Unlock()
-	for _, sub := range c.subs {
+	for i := len(c.subs) - 1; i >= 0; i-- {
+		params, ok := c.subs[i].Params.([]string)
+		if c.subs[i].Method == method && ok && len(params) == 1 && params[0] == symbol {
+			c.subs = append(c.subs[:i], c.subs[i+1:]...)
+		}
+	}
+}
+
+func (c *Client) resubscribe(ctx context.Context) {
+	c.subMu.Lock()
+	subs := append([]subscription(nil), c.subs...)
+	c.subMu.Unlock()
+	for _, sub := range subs {
 		_ = c.writeJSON(ctx, sub)
 	}
 }
 
 func (c *Client) writeJSON(ctx context.Context, v any) error {
-	deadline := time.Now().Add(defaultWriteTimeout)
 	c.connMu.RLock()
 	conn := c.conn
 	c.connMu.RUnlock()
 	if conn == nil {
 		return errors.New("ws: not connected")
 	}
-	_ = conn.SetWriteDeadline(deadline)
+	return c.writeJSONTo(ctx, conn, v)
+}
+
+func (c *Client) writeJSONTo(ctx context.Context, conn *websocket.Conn, v any) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
-		return conn.WriteJSON(v)
 	}
+	_ = conn.SetWriteDeadline(time.Now().Add(defaultWriteTimeout))
+	return conn.WriteJSON(v)
 }
 
 func (c *Client) readLoop() {
@@ -239,20 +321,25 @@ func (c *Client) readLoop() {
 		_ = conn.SetReadDeadline(time.Now().Add(defaultReadTimeout))
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
-				go c.reconnect()
+			if c.isClosed() {
+				return
+			}
+			if c.currentConn() == conn {
+				c.startReconnect()
 			}
 			select {
 			case <-c.done:
 				return
-			case <-time.After(defaultReconnectMin):
+			case <-time.After(100 * time.Millisecond):
 			}
 			continue
 		}
 
 		var ev Event
 		ev.Raw = msg
-		_ = json.Unmarshal(msg, &ev)
+		if err := json.Unmarshal(msg, &ev); err != nil {
+			continue
+		}
 		select {
 		case c.events <- ev:
 		case <-c.done:
@@ -283,6 +370,12 @@ func (c *Client) pingLoop() {
 }
 
 func (c *Client) reconnect() {
+	defer func() {
+		c.stateMu.Lock()
+		c.reconnecting = false
+		c.stateMu.Unlock()
+	}()
+
 	backoff := defaultReconnectMin
 	for {
 		select {
@@ -302,4 +395,33 @@ func (c *Client) reconnect() {
 			backoff = defaultReconnectMax
 		}
 	}
+}
+
+func (c *Client) startReconnect() {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.closed || c.reconnecting {
+		return
+	}
+	c.reconnecting = true
+	go c.reconnect()
+}
+
+func (c *Client) isClosed() bool {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	return c.closed
+}
+
+func (c *Client) currentConn() *websocket.Conn {
+	c.connMu.RLock()
+	defer c.connMu.RUnlock()
+	return c.conn
+}
+
+func subscriptionMethod(channel, action string) string {
+	channel = strings.TrimSpace(channel)
+	channel = strings.TrimSuffix(channel, ".subscribe")
+	channel = strings.TrimSuffix(channel, ".unsubscribe")
+	return channel + "." + action
 }

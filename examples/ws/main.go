@@ -31,7 +31,10 @@ func main() {
 
 	for {
 		select {
-		case ev := <-client.Events():
+		case ev, ok := <-client.Events():
+			if !ok {
+				return
+			}
 			fmt.Printf("event: %+v\n", ev)
 		case <-ctx.Done():
 			return

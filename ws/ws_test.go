@@ -2,9 +2,13 @@ package ws
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +18,7 @@ import (
 
 func TestClient_SubscribeAndReceiveEvent(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	var captured []byte
+	requests := make(chan map[string]any, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -27,12 +31,11 @@ func TestClient_SubscribeAndReceiveEvent(t *testing.T) {
 			if err != nil {
 				return
 			}
-			captured = append(captured, msg...)
-
 			var req map[string]any
 			_ = json.Unmarshal(msg, &req)
+			requests <- req
 
-			if m, ok := req["method"].(string); ok && m == "subscribe" {
+			if m, ok := req["method"].(string); ok && strings.HasSuffix(m, ".subscribe") {
 				_ = conn.WriteMessage(mt, []byte(`{"method":"subscribe","result":{"status":"success"}}`))
 			}
 		}
@@ -63,14 +66,23 @@ func TestClient_SubscribeAndReceiveEvent(t *testing.T) {
 		t.Fatal("timed out waiting for event")
 	}
 
-	if !strings.Contains(string(captured), "orderbook") {
-		t.Fatalf("expected subscription message to contain orderbook, got %s", captured)
+	select {
+	case req := <-requests:
+		if req["method"] != "orderbook.subscribe" {
+			t.Fatalf("method = %v, want orderbook.subscribe", req["method"])
+		}
+		params, ok := req["params"].([]any)
+		if !ok || len(params) != 1 || params[0] != "BTCUSDT" {
+			t.Fatalf("unexpected subscription params: %#v", req["params"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for subscription request")
 	}
 }
 
 func TestClient_AuthSendsSignature(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	var captured []byte
+	requests := make(chan map[string]any, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -83,7 +95,9 @@ func TestClient_AuthSendsSignature(t *testing.T) {
 			if err != nil {
 				return
 			}
-			captured = append(captured, msg...)
+			var req map[string]any
+			_ = json.Unmarshal(msg, &req)
+			requests <- req
 		}
 	}))
 	defer server.Close()
@@ -103,13 +117,35 @@ func TestClient_AuthSendsSignature(t *testing.T) {
 	}
 	defer client.Close()
 
-	// Wait briefly for auth message to be sent.
-	time.Sleep(200 * time.Millisecond)
-
-	if !strings.Contains(string(captured), "user.auth") {
-		t.Fatalf("expected auth message, got %s", captured)
+	select {
+	case req := <-requests:
+		if req["method"] != "user.auth" {
+			t.Fatalf("method = %v, want user.auth", req["method"])
+		}
+		params, ok := req["params"].([]any)
+		if !ok || len(params) != 4 || params[0] != "API" || params[1] != "api-key" {
+			t.Fatalf("unexpected auth params: %#v", req["params"])
+		}
+		expiry, ok := params[3].(float64)
+		if !ok || int64(expiry) <= time.Now().Unix() {
+			t.Fatalf("invalid auth expiry: %#v", params[3])
+		}
+		mac := hmac.New(sha256.New, []byte("api-secret"))
+		mac.Write([]byte("api-key" + strconv.FormatInt(int64(expiry), 10)))
+		if params[2] != hex.EncodeToString(mac.Sum(nil)) {
+			t.Fatalf("invalid auth signature: %v", params[2])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for authentication request")
 	}
-	if !strings.Contains(string(captured), "api-key") {
-		t.Fatalf("expected auth message to contain api-key, got %s", captured)
+}
+
+func TestClient_CloseIsIdempotent(t *testing.T) {
+	client := NewClient(Config{})
+	if err := client.Close(); err != nil {
+		t.Fatalf("first close: %v", err)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatalf("second close: %v", err)
 	}
 }

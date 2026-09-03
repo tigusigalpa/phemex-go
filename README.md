@@ -1,16 +1,19 @@
-# Phemex crypto-exchange Golang SDK
+# Phemex crypto-exchange Golang Client/SDK/Library
 
 ![Phemex Golang SDK](https://i.postimg.cc/Dy6hdCt3/phemex-golang-banner.jpg)
+
+[![CI](https://github.com/tigusigalpa/phemex-go/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tigusigalpa/phemex-go/actions/workflows/ci.yml)
+[![Tests](https://github.com/tigusigalpa/phemex-go/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/tigusigalpa/phemex-go/actions/workflows/test.yml)
+[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat-square&logo=go)](https://golang.org/)
+[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+[![CodeQL](https://github.com/tigusigalpa/phemex-go/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/tigusigalpa/phemex-go/actions/workflows/codeql.yml)
+[![Codecov](https://codecov.io/gh/tigusigalpa/phemex-go/graph/badge.svg)](https://codecov.io/gh/tigusigalpa/phemex-go)
+[![GitHub Release](https://img.shields.io/github/v/release/tigusigalpa/phemex-go?style=flat-square)](https://github.com/tigusigalpa/phemex-go/releases)
+[![GoDoc](https://img.shields.io/badge/godoc-reference-blue?style=flat-square&logo=go)](https://pkg.go.dev/github.com/tigusigalpa/phemex-go)
 
 **A friendly, batteries-included Golang SDK for the [Phemex](https://phemex.com/) crypto exchange.**
 
 Trade spot, perpetuals, and margin, stream live market data, and manage your wallets — all with clean, idiomatic Go.
-
-[![Go Reference](https://pkg.go.dev/badge/github.com/tigusigalpa/phemex-go.svg)](https://pkg.go.dev/github.com/tigusigalpa/phemex-go)
-[![Go Report Card](https://goreportcard.com/badge/github.com/tigusigalpa/phemex-go)](https://goreportcard.com/report/github.com/tigusigalpa/phemex-go)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/tigusigalpa/phemex-go)](go.mod)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/tigusigalpa/phemex-go/pulls)
 
 ## Related Projects and Documentation
 
@@ -40,7 +43,7 @@ Under the hood, `phemex-go` takes care of the tedious, error-prone parts so you 
 
 ## Requirements
 
-- Go **1.21** or newer (the library uses the `any` alias and modern `context` semantics)
+- Go **1.26.4** or newer (as declared in `go.mod`)
 - A Phemex account with API credentials for any private (trading/account) endpoints
 
 > Public market-data endpoints work without credentials — great for prototyping and read-only tools.
@@ -126,7 +129,7 @@ assetsClient := assets.NewClient(core)
 | `BaseURI`        | `string`        | `https://api.phemex.com` | REST base URL. Point this at the testnet when experimenting.                 |
 | `HTTPClient`     | `*http.Client`  | internal client          | Bring your own client to control proxies, TLS, or transport pooling.         |
 | `Timeout`        | `time.Duration` | `30s`                    | Per-request timeout (used only when you don't supply your own `HTTPClient`). |
-| `Retries`        | `int`           | `3`                      | How many times to retry on rate limits and 5xx responses.                    |
+| `Retries`        | `int`           | `3`                      | How many times to retry read-only requests on rate limits and 5xx responses. |
 | `RetryDelay`     | `time.Duration` | `1s`                     | Base delay for exponential backoff between retries.                          |
 | `RequestTracing` | `string`        | `""`                     | Optional trace token attached to signed requests for debugging.              |
 
@@ -186,10 +189,6 @@ payload into your own structs:
 resp, err := marketClient.Time(ctx)
 if err != nil {
     log.Fatal(err)
-}
-
-if !resp.IsSuccess() {
-    log.Fatalf("phemex returned an error: %s", resp.Msg())
 }
 
 var t phemex.TimeResponse
@@ -301,13 +300,12 @@ for ev := range client.Events() {
 
 | Channel     | Description                                                  |
 |-------------|--------------------------------------------------------------|
-| `orderbook` | Level 2 order book updates                                   |
-| `trade`     | Real-time public trades                                      |
-| `kline`     | Streaming candlesticks                                       |
-| `aop`       | Account / Order / Position updates (requires authentication) |
+| `orderbook` | Level 2 order book updates for a symbol                      |
+| `trade`     | Real-time public trades for a symbol                         |
 
-When you provide credentials, the client authenticates with a `user.auth` message before your subscriptions go out, so
-private channels like `aop` are ready to use.
+`Subscribe` is the convenience method for symbol-based feeds; it creates one API subscription per supplied symbol.
+For endpoint-specific channels that require extra parameters (for example, a kline interval), use Phemex's documented
+WebSocket request format directly with a client extension or a future endpoint-specific helper.
 
 ## Error Handling
 
@@ -333,8 +331,9 @@ if err != nil {
 }
 ```
 
-Rate limits (`429`) and server errors (`5xx`) are retried automatically with exponential backoff, honoring the
-`Retry-After` header when present. Only after retries are exhausted does the error reach you.
+Rate limits (`429`) and server errors (`5xx`) on read-only requests are retried with exponential backoff, honoring the
+`Retry-After` header when present. State-changing calls are not retried: Phemex documents a 5xx result as having an
+unknown execution outcome, so retrying can duplicate an order or transfer.
 
 ## Examples
 
@@ -367,7 +366,7 @@ go test ./...
 
 Coverage includes:
 
-- HMAC SHA256 signature correctness (including method case-insensitivity and body signing)
+- HMAC SHA256 signature correctness and body signing
 - Signature-header injection for private endpoints, and their absence on public ones
 - Query and body serialization edge cases (repeated keys, boolean `true`/`false`)
 - HTTP error classification and retry behavior (404, 429, 5xx)

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestClient_PublicRequestDoesNotSendSignatureHeaders(t *testing.T) {
@@ -234,5 +235,44 @@ func TestClient_ResponseCodeAndData(t *testing.T) {
 	}
 	if data.Timestamp != 1234567890 {
 		t.Errorf("timestamp = %d", data.Timestamp)
+	}
+}
+
+func TestClient_HTTP200WithAPIFailureReturnsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"code":10001,"msg":"duplicate order"}`)
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURI: server.URL})
+	_, err := client.Do(context.Background(), "GET", "/orders", nil)
+	if err == nil {
+		t.Fatal("expected API error")
+	}
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("expected *APIError, got %T", err)
+	}
+	if apiErr.Code != 10001 || apiErr.Message != "duplicate order" {
+		t.Fatalf("unexpected API error: %+v", apiErr)
+	}
+}
+
+func TestClient_DoesNotRetryUnsafeRequest(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, `{"msg":"outcome unknown"}`)
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURI: server.URL, Retries: 2, RetryDelay: time.Nanosecond})
+	_, err := client.Do(context.Background(), "POST", "/orders/create", map[string]any{"symbol": "BTCUSD"})
+	if err == nil {
+		t.Fatal("expected HTTP error")
+	}
+	if calls != 1 {
+		t.Fatalf("unsafe request was sent %d times, want 1", calls)
 	}
 }

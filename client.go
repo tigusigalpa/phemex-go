@@ -43,7 +43,9 @@ type Config struct {
 	HTTPClient *http.Client
 	// Timeout is the default request timeout.
 	Timeout time.Duration
-	// Retries is the number of retries for transient failures and rate limits.
+	// Retries is the number of retries for transient failures and rate limits on
+	// safe read-only requests. State-changing requests are never retried because
+	// the exchange can process them even when it returns a 5xx response.
 	Retries int
 	// RetryDelay is the base delay used for exponential backoff.
 	RetryDelay time.Duration
@@ -190,10 +192,14 @@ func (c *Client) signRequest(req *http.Request, method, path, queryString, body 
 func (c *Client) executeWithRetries(ctx context.Context, req *http.Request) (*Response, error) {
 	var lastErr error
 	maxAttempts := c.config.retries()
+	canRetry := isSafeMethod(req.Method)
 
 	for attempt := 0; attempt <= maxAttempts; attempt++ {
 		resp, err := c.httpClient().Do(req)
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			return nil, fmt.Errorf("phemex: http request failed: %w", err)
 		}
 
@@ -210,8 +216,11 @@ func (c *Client) executeWithRetries(ctx context.Context, req *http.Request) (*Re
 
 		if status == http.StatusTooManyRequests {
 			lastErr = newRateLimitError(status, body, resp.Header.Get("Retry-After"))
-			if attempt < maxAttempts {
+			if canRetry && attempt < maxAttempts {
 				sleepForRetry(ctx, resp.Header.Get("Retry-After"), c.config.retryDelay(), attempt)
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
 				continue
 			}
 			return nil, lastErr
@@ -219,8 +228,11 @@ func (c *Client) executeWithRetries(ctx context.Context, req *http.Request) (*Re
 
 		if status >= 500 {
 			lastErr = newHTTPError(status, body)
-			if attempt < maxAttempts {
+			if canRetry && attempt < maxAttempts {
 				sleepForBackoff(ctx, c.config.retryDelay(), attempt)
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
 				continue
 			}
 			return nil, lastErr
@@ -245,7 +257,26 @@ func parseResponse(body []byte) (*Response, error) {
 		return nil, fmt.Errorf("phemex: decode response: %w", err)
 	}
 
-	return &Response{Raw: raw}, nil
+	response := &Response{Raw: raw}
+	if code := response.Code(); code != 0 {
+		return nil, newAPIErrorFromBody(0, code, body)
+	}
+	if response.ErrorMsg() != "" {
+		return nil, newAPIErrorFromBody(0, 0, body)
+	}
+	return response, nil
+}
+
+// isSafeMethod limits automatic retries to requests which cannot change server
+// state. Phemex documents 5xx outcomes as unknown, so retrying an order or
+// transfer could submit it twice.
+func isSafeMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	default:
+		return false
+	}
 }
 
 func sleepForRetry(ctx context.Context, retryAfter string, baseDelay time.Duration, attempt int) {
