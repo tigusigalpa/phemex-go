@@ -16,7 +16,7 @@ func TestClient_PublicRequestDoesNotSendSignatureHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		received = r
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"code":0,"msg":""}`)
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":""}`)
 	}))
 	defer server.Close()
 
@@ -39,7 +39,7 @@ func TestClient_PrivateRequestAddsSignatureHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		received = r
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"code":0,"msg":""}`)
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":""}`)
 	}))
 	defer server.Close()
 
@@ -80,7 +80,7 @@ func TestClient_PostRequestBodyIsSigned(t *testing.T) {
 			t.Errorf("read body in handler: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"code":0,"msg":""}`)
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":""}`)
 	}))
 	defer server.Close()
 
@@ -113,7 +113,7 @@ func TestClient_RepeatedQueryKeys(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		received = r
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"code":0,"msg":""}`)
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":""}`)
 	}))
 	defer server.Close()
 
@@ -140,7 +140,7 @@ func TestClient_BooleanQueryParamsSerializedAsTrueFalse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		received = r
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"code":0,"msg":""}`)
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":""}`)
 	}))
 	defer server.Close()
 
@@ -167,7 +167,7 @@ func TestClient_NotFoundError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprint(w, `{"msg":"Not found"}`)
+		_, _ = fmt.Fprint(w, `{"msg":"Not found"}`)
 	}))
 	defer server.Close()
 
@@ -188,7 +188,7 @@ func TestClient_RateLimitError(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Retry-After", "0")
 		w.WriteHeader(http.StatusTooManyRequests)
-		fmt.Fprint(w, `{"msg":"Rate limit"}`)
+		_, _ = fmt.Fprint(w, `{"msg":"Rate limit"}`)
 	}))
 	defer server.Close()
 
@@ -212,7 +212,7 @@ func TestClient_RateLimitError(t *testing.T) {
 func TestClient_ResponseCodeAndData(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"code":0,"msg":"ok","data":{"timestamp":1234567890}}`)
+		_, _ = fmt.Fprint(w, `{"code":0,"msg":"ok","data":{"timestamp":1234567890}}`)
 	}))
 	defer server.Close()
 
@@ -240,7 +240,7 @@ func TestClient_ResponseCodeAndData(t *testing.T) {
 
 func TestClient_HTTP200WithAPIFailureReturnsError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"code":10001,"msg":"duplicate order"}`)
+		_, _ = fmt.Fprint(w, `{"code":10001,"msg":"duplicate order"}`)
 	}))
 	defer server.Close()
 
@@ -263,7 +263,7 @@ func TestClient_DoesNotRetryUnsafeRequest(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, `{"msg":"outcome unknown"}`)
+		_, _ = fmt.Fprint(w, `{"msg":"outcome unknown"}`)
 	}))
 	defer server.Close()
 

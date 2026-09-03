@@ -24,7 +24,7 @@ func TestClient_SubscribeAndReceiveEvent(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		for {
 			mt, msg, err := conn.ReadMessage()
@@ -51,7 +51,7 @@ func TestClient_SubscribeAndReceiveEvent(t *testing.T) {
 	if err := client.Connect(ctx); err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	if err := client.Subscribe(ctx, "orderbook", "BTCUSDT"); err != nil {
 		t.Fatalf("subscribe: %v", err)
@@ -88,7 +88,7 @@ func TestClient_AuthSendsSignature(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		for {
 			_, msg, err := conn.ReadMessage()
@@ -115,7 +115,7 @@ func TestClient_AuthSendsSignature(t *testing.T) {
 	if err := client.Connect(ctx); err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	select {
 	case req := <-requests:

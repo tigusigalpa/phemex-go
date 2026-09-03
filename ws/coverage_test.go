@@ -20,7 +20,7 @@ func TestClientMultipleSubscriptionsAndUnsubscribe(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		for {
 			_, message, err := conn.ReadMessage()
 			if err != nil {
@@ -38,7 +38,7 @@ func TestClientMultipleSubscriptionsAndUnsubscribe(t *testing.T) {
 	if err := client.Connect(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	if err := client.Subscribe(context.Background(), "trade.subscribe", "BTCUSD", "ETHUSD"); err != nil {
 		t.Fatal(err)
 	}

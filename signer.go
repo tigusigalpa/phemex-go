@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -37,7 +36,9 @@ func (s *Signer) Expiry(offsetSeconds int64) int64 {
 // the leading slash, and queryString must not include the leading question
 // mark.
 func (s *Signer) Sign(method, path, queryString string, expiry int64, body string) string {
-	method = strings.ToUpper(method)
+	// Phemex's signature formula does not include the HTTP method. Keep this
+	// argument for backward compatibility with the public API.
+	_ = method
 	message := fmt.Sprintf("%s%s%d%s", path, queryString, expiry, body)
 	mac := hmac.New(sha256.New, []byte(s.secret))
 	mac.Write([]byte(message))
