@@ -23,7 +23,7 @@ func main() {
 	if err := client.Connect(ctx); err != nil {
 		log.Fatal(err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	if err := client.Subscribe(ctx, "orderbook", "BTCUSDT"); err != nil {
 		log.Fatal(err)
