@@ -18,7 +18,7 @@ jobs:
           mkdir -p test-results
           go test -race -covermode=atomic -coverprofile test-results/coverage ./...
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: ./test-results/coverage
           disable_search: true
